@@ -1,39 +1,43 @@
 package url
 
 import (
-
+	"fmt"
+	neturl "net/url"
 	"strings"
+
 	"golang.org/x/net/html"
-	"golang.org/x/net/html/atom"
 )
 
-func GetURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
-
-	ans := make([]string,0)
-	doc, err := html.Parse(strings.NewReader(htmlBody))
+func GetURLsFromHTML(htmlBody string, baseURL *neturl.URL) ([]string, error) {
+	htmlReader := strings.NewReader(htmlBody)
+	doc, err := html.Parse(htmlReader)
 	if err != nil {
-
-		return nil, err
+		return nil, fmt.Errorf("couldn't parse HTML: %v", err)
 	}
 
-	for n := range doc.Descendants() {
-		if n.Type == html.ElementNode && n.DataAtom == atom.A {
-			for _, a := range n.Attr {
-				if a.Key == "href" {
-					
-					if a.Val[0] == '/' {
-
-						ans = append(ans, rawBaseURL + a.Val)
-					} else {
-
-						ans = append(ans, a.Val);
+	var urls []string
+	var traverseNodes func(*html.Node)
+	traverseNodes = func(node *html.Node) {
+		if node.Type == html.ElementNode && node.Data == "a" {
+			for _, anchor := range node.Attr {
+				if anchor.Key == "href" {
+					href, err := neturl.Parse(anchor.Val)
+					if err != nil {
+						fmt.Printf("couldn't parse href '%v': %v\n", anchor.Val, err)
+						continue
 					}
-					break
+
+					resolvedURL := baseURL.ResolveReference(href)
+					urls = append(urls, resolvedURL.String())
 				}
 			}
 		}
-	}
 
-	return ans, nil
-	
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			traverseNodes(child)
+		}
+	}
+	traverseNodes(doc)
+
+	return urls, nil
 }
